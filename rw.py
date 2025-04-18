@@ -2,6 +2,7 @@ import random
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import numpy as np
+import model
 
 def sign(x):
     return int(x / abs(x))
@@ -35,6 +36,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
     
     walkers = [0]
     visit_counts[0] += 1
+    num_bifurcations = 0
     
     for _ in range(steps):
         if len(walkers) == 0:
@@ -49,6 +51,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
                 n_branches = 0
             elif X < (prob_annihilation + prob_bifurcation):
                 n_branches = 2
+                num_bifurcations += 1
             else:
                 n_branches = 1
 
@@ -74,9 +77,9 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
         xp = np.arange(0, max_distance + bin_size, bin_size)
         yp = np.interp(xp, visit_counts[0, :], visit_counts[1, :])
         yp[xp > max_distance] = 0
-        return xp.tolist(), yp.tolist()
+        return (xp.tolist(), yp.tolist()), num_bifurcations
     else:
-        return visit_counts[0, :].tolist(), visit_counts[1, :].tolist()
+        return (visit_counts[0, :].tolist(), visit_counts[1, :].tolist()), num_bifurcations
 
 
 def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_right: float = 0.5, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size: float=None, base_seed: int = 42):
@@ -93,11 +96,13 @@ def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_ri
         list of lists: Each inner list is a position trace of one walk.
     """
     all_walks = []
+    num_bifurcations = []
     for trial in range(n_trials):
         seed = base_seed + trial  # unique seed per trial
-        sp = random_walk_1d(steps, step_size, prob_right, seed, rate_bifurcation, rate_annihilation, bin_size)
+        sp, _num_bifurcations = random_walk_1d(steps, step_size, prob_right, seed, rate_bifurcation, rate_annihilation, bin_size)
         all_walks.append(sp)
-    return all_walks
+        num_bifurcations.append(_num_bifurcations)
+    return all_walks, num_bifurcations
 
 
 
@@ -105,20 +110,37 @@ def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_ri
 if __name__ == "__main__":
     steps = 350  # Number of steps in the random walk
     prob_right = 1  # Probability of moving right
-    rate_bifurcation = 0.05
-    rate_annihilation = 0.01
-    n_trials = 100
-    all_walks = run_multiple_trials(100, steps, prob_right=prob_right, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50)
+    rate_bifurcation = 0.01
+    rate_annihilation = 0.005
+    n_trials = 150
+    step_size = 0.5
+    all_walks, num_bifurcations = run_multiple_trials(100, steps, step_size=step_size, prob_right=prob_right, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50)
 
-    all_visits = np.array([ yp + ([0.] * (14 - len(yp))) for _, yp in all_walks ])
-    distance = np.arange(0, 14) * 50
+    distance = np.arange(0, 5) * 50
+    all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
     visits_mean = np.mean(all_visits, axis=0)
     visits_std = np.std(all_visits, axis=0)
+    bif_mean = np.mean(num_bifurcations)
+    bif_std = np.std(num_bifurcations)
+
+    model_mean = np.array([ model.mean_Z(x, 1, rate_bifurcation, rate_annihilation) for x in distance ])
+    model_std = np.array([ np.sqrt(model.var_Z(x, 1, 0, rate_bifurcation, rate_annihilation)) for x in distance ])
+
+
+    # print bifurcations
+    print('# sim. bifurcations mean and std',
+          bif_mean,
+          bif_std)
+    print('# modeled bifurcations mean and std',
+          model.mean_B(steps * step_size, 1, rate_bifurcation, rate_annihilation),
+          np.sqrt(model.var_B(steps * step_size, 1, 0, rate_bifurcation, rate_annihilation)))
     
     # Plotting the result
     plt.plot(distance, visits_mean, color='blue')
     plt.scatter(distance, visits_mean, color='blue')
     plt.fill_between(distance, visits_mean - visits_std, visits_mean + visits_std, alpha=0.1, color='blue')
+    
+    plt.errorbar(distance, model_mean, yerr=model_std, fmt='o', capsize=5, color='black')
     
     plt.xlabel('Distance')
     plt.ylabel('Visits')
