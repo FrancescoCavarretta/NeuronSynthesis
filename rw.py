@@ -3,15 +3,18 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 import numpy as np
 import model
+from scipy import stats
 
 def sign(x):
     """ return the sign of the variable """
     return int(x / abs(x))
 
 
-import numpy as np
-from scipy import stats
-import numpy as np
+def positive_normal_sample(mean, std):
+    while True:
+        sample = np.random.normal(loc=mean, scale=std)
+        if sample > 0:
+            return sample
 
 
 def one_sample_tests(data, mean_h0=None, var_h0=None, alternative='two-sided'):
@@ -126,7 +129,7 @@ def bootstrap_test_1sample(data, hypothesized_value,
     return obs_stat, p_value
 
 
-def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, seed: int = 0, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size=None):
+def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, seed: int = 0, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size = None, init_num = 1):
     """
     Perform a 1D random walk and return a Sholl Plot
 
@@ -138,6 +141,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, se
         rate_bifurcation (float): Bifurcation rate (default is 0, i.e., no bifurcation).
         rate_annihilation (float): Annihilation rate (default is 0, i.e., no annihilation).
         bin_size (float): Spatial interval size of the returned Sholl Plot (default is None, i.e., bin size and step size are the same)
+        init_num (int): Initial number of dendrites (default is 1, i.e.); it can be also a tuple (mean, SD)
 
     Returns:
         (x_visit, y_visit): Two lists showing the visit count for each spatial location
@@ -157,9 +161,13 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, se
     
     np.random.seed(seed)
     visit_counts = defaultdict(float)   # this vector count the visit as a function of the distance from soma
-    
-    walkers = [0]
-    visit_counts[0] += 1
+
+    # if the init_num is a tuple, extract a random number
+    if type(init_num) == tuple:
+        init_num = positive_normal_sample(*init_num)
+        
+    walkers = [0] * init_num
+    visit_counts[0] += init_num
     num_bifurcations = 0
     
     for _ in range(steps):
@@ -211,7 +219,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, se
         return (visit_counts[0, :].tolist(), visit_counts[1, :].tolist()), num_bifurcations
 
 
-def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_fugal: float = 0.5, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size: float=None, base_seed: int = 42):
+def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_fugal: float = 0.5, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size: float=None, base_seed: int = 42, init_num = 1):
     """
     Run multiple trials of the random walk and store each path.
 
@@ -228,7 +236,7 @@ def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_fu
     num_bifurcations = []
     for trial in range(n_trials):
         seed = base_seed + trial  # unique seed per trial
-        sp, _num_bifurcations = random_walk_1d(steps, step_size, prob_fugal, seed, rate_bifurcation, rate_annihilation, bin_size)
+        sp, _num_bifurcations = random_walk_1d(steps, step_size, prob_fugal, seed, rate_bifurcation, rate_annihilation, bin_size, init_num)
         all_walks.append(sp)
         num_bifurcations.append(_num_bifurcations)
     return all_walks, num_bifurcations
@@ -243,9 +251,10 @@ if __name__ == "__main__":
     rate_annihilation = 0.01
     n_trials = 200
     step_size = 0.5
+    init_num = 2
     steps = int(round(maximum_distance / step_size))  # Number of steps in the random walk
     all_walks, num_bifurcations = run_multiple_trials(n_trials, steps, step_size=step_size,
-                                                      prob_fugal=prob_fugal, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50, base_seed=1000)
+                                                      prob_fugal=prob_fugal, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50, base_seed=1000, init_num=init_num)
 
     distance = np.arange(0, int(maximum_distance / 50) + 1) * 50
     all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
@@ -255,11 +264,11 @@ if __name__ == "__main__":
     bif_mean_sim = np.mean(num_bifurcations)
     bif_std_sim = np.std(num_bifurcations)
 
-    visits_mean_hyp = np.array([ model.mean_Z(x, 1, rate_bifurcation, rate_annihilation) for x in distance ])
-    visits_std_hyp = np.array([ np.sqrt(model.var_Z(x, 1, 0, rate_bifurcation, rate_annihilation)) for x in distance ])
+    visits_mean_hyp = np.array([ model.mean_Z(x, init_num, rate_bifurcation, rate_annihilation) for x in distance ])
+    visits_std_hyp = np.array([ np.sqrt(model.var_Z(x, init_num, 0, rate_bifurcation, rate_annihilation)) for x in distance ])
 
-    bif_mean_hyp = model.mean_B(steps * step_size, 1, rate_bifurcation, rate_annihilation)
-    bif_std_hyp = np.sqrt(model.var_B(steps * step_size, 1, 0, rate_bifurcation, rate_annihilation))
+    bif_mean_hyp = model.mean_B(steps * step_size, init_num, rate_bifurcation, rate_annihilation)
+    bif_std_hyp = np.sqrt(model.var_B(steps * step_size, init_num, 0, rate_bifurcation, rate_annihilation))
 
     # print bifurcations
     print('# sim. bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_sim, bif_std_sim))
