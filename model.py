@@ -76,9 +76,8 @@ def var_B(x, E_z0, Var_z0, beta, alpha):
     """
     kappa = beta - alpha
     if kappa != 0:
-        exp_kx = np.exp(kappa * x)
-        term1 = (E_z0**2 + 2 * Var_z0) * (exp_kx - 1) / kappa
-        term2 = 2 * (2 * beta - kappa) * E_z0 * ((exp_kx - 1) / kappa - x) / kappa
-        return (beta**2) * (exp_kx - 1) / kappa * (term1 + term2)
+        term1 = (beta / kappa) * (np.exp(kappa * x) - 1)
+        term2 = (beta**2 * (beta + alpha) / kappa**3) * (np.exp(2 * kappa * x) - 2 * kappa * x * np.exp(kappa * x) - 1)
+        return E_z0 * (term1 + term2)
     else:
         return beta**2 * x * ((E_z0**2 + 2 * Var_z0) * x + 2 * beta * E_z0 * x**2)
