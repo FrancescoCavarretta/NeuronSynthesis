@@ -7,13 +7,13 @@ import model
 def sign(x):
     return int(x / abs(x))
 
-def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, seed: int = 42, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size=None):
+def random_walk_1d(steps: int, step_size: float=0.5, prob_fugal: float = 0.5, seed: int = 42, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size=None):
     """
     Perform a 1D random walk.
 
     Parameters:
         steps (int): Number of steps to simulate the walk.
-        prob_right (float): Probability of stepping to the right (default is 0.5 for a symmetric random walk).
+        prob_fugal (float): Probability of stepping to the right (default is 0.5 for a symmetric random walk).
         seed (int): Random seed for reproducibility.
 
     Returns:
@@ -24,7 +24,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
     prob_bifurcation = rate_bifurcation * step_size
 
     # check correctness of values
-    assert 0 <= prob_right <= 1
+    assert 0 <= prob_fugal <= 1
     assert 0 <= prob_bifurcation <= 1
     assert 0 <= prob_annihilation <= 1
     assert 0 <= prob_bifurcation + prob_annihilation <= 1
@@ -51,7 +51,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
                 n_branches = 0
             elif X < (prob_annihilation + prob_bifurcation):
                 n_branches = 2
-                num_bifurcations += 1
+                num_bifurcations += 1 # count the bifurcations
             else:
                 n_branches = 1
 
@@ -61,7 +61,7 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
                 if position == 0:
                     step_sign = 1 if random.random() < 0.5 else -1
                 else:
-                    step_sign = (1 if random.random() < prob_right else -1) * sign(position)
+                    step_sign = (1 if random.random() < prob_fugal else -1) * sign(position)
                 step = step_size * step_sign
                 new_position = position + step
                 
@@ -82,14 +82,14 @@ def random_walk_1d(steps: int, step_size: float=0.5, prob_right: float = 0.5, se
         return (visit_counts[0, :].tolist(), visit_counts[1, :].tolist()), num_bifurcations
 
 
-def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_right: float = 0.5, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size: float=None, base_seed: int = 42):
+def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_fugal: float = 0.5, rate_bifurcation: float = 0, rate_annihilation: float = 0, bin_size: float=None, base_seed: int = 42):
     """
     Run multiple trials of the random walk and store each path.
 
     Parameters:
         n_trials (int): Number of independent random walk trials.
         steps (int): Number of steps in each walk.
-        prob_right (float): Probability of moving right.
+        prob_fugal (float): Probability of moving right.
         base_seed (int): Seed for reproducibility.
 
     Returns:
@@ -99,7 +99,7 @@ def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_ri
     num_bifurcations = []
     for trial in range(n_trials):
         seed = base_seed + trial  # unique seed per trial
-        sp, _num_bifurcations = random_walk_1d(steps, step_size, prob_right, seed, rate_bifurcation, rate_annihilation, bin_size)
+        sp, _num_bifurcations = random_walk_1d(steps, step_size, prob_fugal, seed, rate_bifurcation, rate_annihilation, bin_size)
         all_walks.append(sp)
         num_bifurcations.append(_num_bifurcations)
     return all_walks, num_bifurcations
@@ -109,12 +109,12 @@ def run_multiple_trials(n_trials: int, steps: int, step_size: float=0.5, prob_ri
 # Example usage:
 if __name__ == "__main__":
     steps = 350  # Number of steps in the random walk
-    prob_right = 1  # Probability of moving right
-    rate_bifurcation = 0.01
-    rate_annihilation = 0.005
-    n_trials = 150
+    prob_fugal = 1  # Probability of moving right
+    rate_bifurcation = 0.03
+    rate_annihilation = 0.01
+    n_trials = 500
     step_size = 0.5
-    all_walks, num_bifurcations = run_multiple_trials(100, steps, step_size=step_size, prob_right=prob_right, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50)
+    all_walks, num_bifurcations = run_multiple_trials(100, steps, step_size=step_size, prob_fugal=prob_fugal, rate_bifurcation=rate_bifurcation, rate_annihilation=rate_annihilation, bin_size=50)
 
     distance = np.arange(0, 5) * 50
     all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
