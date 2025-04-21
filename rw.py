@@ -205,7 +205,7 @@ def random_walk_1d(bin_size, rate_bifurcation: list, rate_annihilation: list, st
         for i in range(len(walkers)):
             # walk
             position = walkers[i]
-
+            
             # bin_index
             bin_index = int(abs(position) / bin_size)
             if bin_index >= prob_annihilation.size:
@@ -300,16 +300,16 @@ if __name__ == "__main__":
     maximum_distance = len(rate_annihilation) * 50.0
     prob_fugal = 1  # Probability of moving right
     ##    print('rate_bifurcation:', rate_bifurcation, '\trate_annihilation', rate_annihilation)
-    n_trials = 300
-    step_size = 0.5
+    n_trials = 150
+    step_size = 1
     init_num = exp_data.loc[0, ['avg', 'SD']].tolist()
     ##    print(init_num)
     ##    resample_size = 10
     steps = int(round(maximum_distance / step_size))  # Number of steps in the random walk
-    all_walks, num_bifurcations = run_multiple_trials(n_trials, 50, rate_bifurcation, rate_annihilation, step_size=step_size,
+    all_walks, num_bifurcations = run_multiple_trials(n_trials, dx, rate_bifurcation, rate_annihilation, step_size=step_size,
                                                       prob_fugal=prob_fugal, base_seed=1000, init_num=init_num)
 
-    distance = np.arange(0, int(maximum_distance / 50) + 1) * 50
+    distance = np.arange(0, int(maximum_distance / dx) + 1) * dx
     all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
     visits_mean_sim = np.mean(all_visits, axis=0)
     visits_std_sim = np.std(all_visits, axis=0)
