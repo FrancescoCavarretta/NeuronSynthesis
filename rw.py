@@ -10,6 +10,46 @@ import pandas as pd
 
 from scipy.stats import chi2
 
+from scipy.stats import norm, f
+
+def compare_samples(mean1, var1, n1, mean2, var2, n2):
+    """
+    Compares the means and variances of two samples.
+
+    Parameters:
+    - mean1, var1, n1: mean, variance, and size of sample 1
+    - mean2, var2, n2: mean, variance, and size of sample 2
+    - alpha: significance level (default is 0.05)
+
+    Returns:
+    - Dictionary with Z-test and F-test results
+    """
+
+    # --- Z-Test for Means ---
+    se = ((var1 / n1) + (var2 / n2)) ** 0.5
+    z_score = (mean1 - mean2) / se
+    p_value_z = 2 * (1 - norm.cdf(abs(z_score)))
+
+    # --- F-Test for Variances ---
+    if var1 > var2:
+        f_stat = var1 / var2
+        df1, df2 = n1 - 1, n2 - 1
+    else:
+        f_stat = var2 / var1
+        df1, df2 = n2 - 1, n1 - 1
+
+    p_value_f = 2 * min(f.cdf(f_stat, df1, df2), 1 - f.cdf(f_stat, df1, df2))
+
+    return {
+        "Z Test": {
+            "z_score": z_score,
+            "p_value": p_value_z
+        },
+        "F Test": {
+            "f_statistic": f_stat,
+            "p_value": p_value_f
+        }
+    }
 
 
 def read_distance_csv_no_header(filepath):
@@ -173,8 +213,6 @@ def random_walk_1d(bin_size, rate_bifurcation: list, rate_annihilation: list, st
 
     prob_annihilation = np.array(rate_annihilation) * step_size
     prob_bifurcation = np.array(rate_bifurcation) * step_size
-   
-    
 
     # check correctness of values
     assert 0 <= prob_fugal <= 1
@@ -288,26 +326,47 @@ if __name__ == "__main__":
     import sys
 
     filepath = {'SP':'sp_apical_sholl_plot.txt', 'SL':'sl_apical_sholl_plot.txt'}[sys.argv[-1]]
+    
     exp_data = read_distance_csv_no_header(filepath)
+    
+    data_bekkers = {
+        'SP':{
+                'init #':{'mean':1.41, 'SD':round(0.13 * np.sqrt(27), 2)},
+                'bif #':{'mean':18.5, 'SD':round(0.9 * np.sqrt(27), 1)},
+                '#':27
+        },
+        'SL':{
+                'init #':{'mean':2.68, 'SD':round(0.12 * np.sqrt(34), 2)},
+                'bif #':{'mean':13.0, 'SD':round(0.5 * np.sqrt(34), 1)},
+                '#':34
+        }
+    }[sys.argv[-1]]
+
+    data_bathellier = {
+        'SP':8,
+        'SL':3
+        }
 
     # assess equal size of intervals
     dx = np.unique(np.diff(exp_data.distance))
     assert dx.size == 1
     dx = dx[0]
+    
+    rate_bifurcation, rate_annihilation = rates.solve_qp(dx, exp_data.avg.to_numpy(), exp_data.SD.to_numpy(), n_bif=(data_bekkers['bif #']['mean'], data_bekkers['bif #']['SD'] ** 2))
 
-    rate_bifurcation, rate_annihilation = rates.solve_qp(dx, exp_data.avg.to_numpy(), exp_data.SD.to_numpy())
-
-    maximum_distance = len(rate_annihilation) * 50.0
+    n_neuron = data_bathellier[sys.argv[-1]]
+    
+    maximum_distance = len(rate_annihilation) * dx
     prob_fugal = 1  # Probability of moving right
     ##    print('rate_bifurcation:', rate_bifurcation, '\trate_annihilation', rate_annihilation)
     n_trials = 150
-    step_size = 1
+    step_size = 5
     init_num = exp_data.loc[0, ['avg', 'SD']].tolist()
     ##    print(init_num)
     ##    resample_size = 10
     steps = int(round(maximum_distance / step_size))  # Number of steps in the random walk
     all_walks, num_bifurcations = run_multiple_trials(n_trials, dx, rate_bifurcation, rate_annihilation, step_size=step_size,
-                                                      prob_fugal=prob_fugal, base_seed=1000, init_num=init_num)
+                                                      prob_fugal=prob_fugal, base_seed=0, init_num=init_num)
 
     distance = np.arange(0, int(maximum_distance / dx) + 1) * dx
     all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
@@ -317,6 +376,10 @@ if __name__ == "__main__":
     bif_mean_sim = np.mean(num_bifurcations)
     bif_std_sim = np.std(num_bifurcations)
 
+    bif_mean_exp = data_bekkers['bif #']['mean']
+    bif_std_exp = data_bekkers['bif #']['SD']
+    n_bif = data_bekkers['#']
+
     #print(distance), print(all_visits)
     if type(init_num) == list:
         visits_mean_hyp = [init_num[0]]
@@ -324,28 +387,50 @@ if __name__ == "__main__":
     else:
         visits_mean_hyp = [init_num]
         visits_std_hyp = [0]
+
+
+    for i in range(distance.size - 1):        
+        Ez0 = visits_mean_hyp[-1]
+        SDz0 = visits_std_hyp[-1]
         
-    for i, x in enumerate(distance):
-        if i < 1:
-            continue            
-        visits_mean_hyp.append(model.mean_Z(dx, visits_mean_hyp[-1], rate_bifurcation[i-1], rate_annihilation[i-1]) )
-        visits_std_hyp.append(np.sqrt(model.var_Z(dx, visits_mean_hyp[-1], visits_std_hyp[-1] ** 2, rate_bifurcation[i-1], rate_annihilation[i-1])))
-        print(visits_mean_hyp[-2], exp_data.loc[i-1, 'avg'], exp_data.loc[i-1, 'SD'])
-        print(visits_mean_hyp[-1], exp_data.loc[i, 'avg'], exp_data.loc[i, 'SD'])
-        print()
+        visits_mean_hyp.append(model.mean_Z(dx, Ez0, rate_bifurcation[i], rate_annihilation[i]) )
+        visits_std_hyp.append(np.sqrt(model.var_Z(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])))
+
     visits_mean_hyp = np.array(visits_mean_hyp)
     visits_std_hyp = np.array(visits_std_hyp)
 
-    bif_mean_hyp = model.mean_B(steps * step_size, init_num[0], rate_bifurcation[0], rate_annihilation[0])
-    bif_std_hyp = np.sqrt(model.var_B(steps * step_size, init_num[0], init_num[1], rate_bifurcation[0], rate_annihilation[0]))
+    
+    bif_mean_hyp = 0
+    bif_std_hyp = 0
+    for i in range(distance.size - 1):
+        Ez0 = visits_mean_hyp[i]
+        SDz0 = visits_std_hyp[i]
+        bif_mean_hyp += model.mean_B(dx, Ez0, rate_bifurcation[i], rate_annihilation[i])
+        bif_std_hyp += model.var_B(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])
+        
+    for i in range(distance.size - 2):
+        Ez0 = visits_mean_hyp[i]
+        SDz0 = visits_std_hyp[i]
+        _var_B = model.var_B(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])
+        
+        term_all_Exps = 0
+        for j in range(i + 1, distance.size - 1):
+            term_all_Exps += np.prod([np.exp( (rate_bifurcation[k] - rate_annihilation[k]) * dx) for k in range(i + 1, j + 1)])
+            
+        bif_std_hyp += 2 * _var_B * term_all_Exps
+
+    bif_std_hyp = np.sqrt(bif_std_hyp)
 
     # print bifurcations
     print('# sim. bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_sim, bif_std_sim))
     print('# modeled bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_hyp, bif_std_hyp))
+    print('# exp. bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_exp, bif_std_exp))
 
     print('comparison of bifurcations (sim vs hyp):')
     print(one_sample_tests(num_bifurcations, mean_h0=bif_mean_hyp, var_h0=bif_std_hyp ** 2))
     
+    print('comparison of bifurcations (sim vs exp):')
+    print(compare_samples(bif_mean_sim, bif_std_sim ** 2, n_trials, bif_mean_exp, bif_std_exp ** 2, n_bif))
     #print('using boostrap')
     #print('\tcomparison of bifurcation mean (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(num_bifurcations, bif_mean_hyp, resample_size=resample_size, seed=48))
     
@@ -358,6 +443,8 @@ if __name__ == "__main__":
         print('distance from soma %d' % x)
         
         print(one_sample_tests(all_visits[:, i], mean_h0=visits_mean_hyp[i], var_h0=visits_std_hyp[i] ** 2))
+
+        print(compare_samples(all_visits[:, i].mean(), all_visits[:, i].var(), all_visits[:, i].size, exp_data.loc[i, 'avg'], exp_data.loc[i, 'SD'] ** 2, n_neuron))
         #print('\tcomparison of bifurcation mean (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(all_visits[:, i], visits_mean_hyp[i], resample_size=resample_size, seed=48 + i))
         
         #print('\tcomparison of bifurcation var (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(all_visits[:, i], visits_std_hyp[i] ** 2, statistic='var', resample_size=resample_size, seed=84 + i))

@@ -32,8 +32,9 @@ def var_Z(x, E_z0, Var_z0, beta, alpha):
     """
     kappa = beta - alpha
 
-    if abs(kappa) > 1e-5:
-        term1 = E_z0 * (2 * beta - kappa) * np.exp(kappa * x) * (np.exp(kappa * x) - 1) / kappa
+    if kappa != 0:
+        exp_kx = np.exp(kappa * x)
+        term1 = E_z0 * (2 * beta - kappa) * exp_kx * (exp_kx - 1) / kappa
         term2 = Var_z0 * np.exp(2 * kappa * x)
         return term1 + term2
     else:
@@ -74,10 +75,17 @@ def var_B(x, E_z0, Var_z0, beta, alpha):
     Returns:
         float or np.ndarray: Var[B(x)]
     """
+    
     kappa = beta - alpha
-    if kappa != 0:
-        term1 = (beta / kappa) * (np.exp(kappa * x) - 1)
-        term2 = (beta**2 * (beta + alpha) / kappa**3) * (np.exp(2 * kappa * x) - 2 * kappa * x * np.exp(kappa * x) - 1)
-        return E_z0 * (term1 + term2)
+
+    if abs(kappa) > 1e-5:
+        exp_kappa = np.exp(kappa * x)
+        exp_2kappa = np.exp(2 * kappa * x)
+
+        #term1 = beta * E_z0 * (exp_kappa - 1) / kappa
+        term2 = beta**2 * (2 * beta - kappa) / kappa * E_z0 * (exp_2kappa - 2 * kappa * x * exp_kappa - 1) / kappa**2
+        term3 = beta**2 * Var_z0 * (exp_2kappa - 2 * exp_kappa + 1) / kappa**2
+
+        return term2 + term3 #term1 * 0 + term2 + term3
     else:
-        return beta**2 * x * ((E_z0**2 + 2 * Var_z0) * x + 2 * beta * E_z0 * x**2)
+        return ( beta * x ) ** 2 * (2 / 3 * beta * E_z0 * x + Var_z0)
