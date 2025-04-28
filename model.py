@@ -41,6 +41,25 @@ def var_Z(x, E_z0, Var_z0, beta, alpha):
         return 2 * E_z0 * beta * x + Var_z0
 
 
+def cov_Z(x, E_z0, Var_z0, beta, alpha):
+    """
+    Compute the variance of Z(x) using kappa = beta - alpha.
+
+    Parameters:
+        x (float or array): Position(s)
+        E_z0 (float): Expected value of z0
+        Var_z0 (float): Variance of z0
+        beta (float): Growth rate parameter
+        alpha (float): Decay rate parameter
+
+    Returns:
+        float or np.ndarray: Var[Z(x)]
+    """
+    kappa = beta - alpha
+
+    return Var_z0 * np.exp(kappa * x)
+
+    
 def mean_B(x, E_z0, beta, alpha):
     """
     Compute the mean number of bifurcations B(x).
