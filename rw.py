@@ -1,77 +1,6 @@
-import random
-import matplotlib.pyplot as plt
-from collections import defaultdict
 import numpy as np
-import model
-from scipy import stats
-import rates
-
-import pandas as pd
-
-from scipy.stats import chi2
-
-from scipy.stats import norm, f
-
-def compare_samples(mean1, var1, n1, mean2, var2, n2):
-    """
-    Compares the means and variances of two samples.
-
-    Parameters:
-    - mean1, var1, n1: mean, variance, and size of sample 1
-    - mean2, var2, n2: mean, variance, and size of sample 2
-    - alpha: significance level (default is 0.05)
-
-    Returns:
-    - Dictionary with Z-test and F-test results
-    """
-
-    # --- Z-Test for Means ---
-    se = ((var1 / n1) + (var2 / n2)) ** 0.5
-    z_score = (mean1 - mean2) / se
-    p_value_z = 2 * (1 - norm.cdf(abs(z_score)))
-
-    # --- F-Test for Variances ---
-    if var1 > var2:
-        f_stat = var1 / var2
-        df1, df2 = n1 - 1, n2 - 1
-    else:
-        f_stat = var2 / var1
-        df1, df2 = n2 - 1, n1 - 1
-
-    p_value_f = 2 * min(f.cdf(f_stat, df1, df2), 1 - f.cdf(f_stat, df1, df2))
-
-    return {
-        "Z Test": {
-            "z_score": z_score,
-            "p_value": p_value_z
-        },
-        "F Test": {
-            "f_statistic": f_stat,
-            "p_value": p_value_f
-        }
-    }
-
-
-def read_distance_csv_no_header(filepath):
-    """
-    Reads a CSV file without a header, assuming columns are:
-    distance, mean, SD (in that order).
-
-    Args:
-        filepath (str): Path to the CSV file.
-
-    Returns:
-        pd.DataFrame: DataFrame with columns ['distance', 'avg', 'SD'].
-    """
-    df = pd.read_csv(filepath, header=None, names=['distance', 'avg', 'SD'])
-    print(df.shape)
-    return df.astype(float)
-
-
-def sign(x):
-    """ return the sign of the variable """
-    return int(x / abs(x))
-
+from collections.abc import Iterable
+from collections import defaultdict
 
 def positive_normal_sample(mean, std):
     while True:
@@ -80,119 +9,19 @@ def positive_normal_sample(mean, std):
             return sample
 
 
-def one_sample_tests(data, mean_h0=None, var_h0=None, alternative='two-sided'):
-    """
-    Perform one-sample t-test (for mean) and chi-square test (for variance).
-    
-    Parameters:
-    - data: list or 1D array of numerical values.
-    - mean_h0: hypothesized mean under H0 (optional).
-    - var_h0: hypothesized variance under H0 (optional).
-    - alternative: 'two-sided', 'less', or 'greater'.
-    
-    Returns:
-    - Dictionary of test results with observed values, test statistics, and p-values.
-    """
-    data = np.asarray(data)
-    n = len(data)
-    results = {}
-
-    if mean_h0 is not None:
-        t_stat, p_val = stats.ttest_1samp(data, popmean=mean_h0, alternative=alternative)
-        obs_mean = np.mean(data)
-        results['mean'] = {
-            'observed': obs_mean,
-            'test_statistic': t_stat,
-            'p_value': p_val
-        }
-
-    if var_h0 is not None:
-        sample_var = np.var(data, ddof=1)
-        chi2_stat = (n - 1) * sample_var / var_h0
-
-        if alternative == 'two-sided':
-            p_val = 2 * min(
-                stats.chi2.cdf(chi2_stat, df=n-1),
-                1 - stats.chi2.cdf(chi2_stat, df=n-1)
-            )
-        elif alternative == 'greater':
-            p_val = 1 - stats.chi2.cdf(chi2_stat, df=n-1)
-        elif alternative == 'less':
-            p_val = stats.chi2.cdf(chi2_stat, df=n-1)
-        else:
-            raise ValueError("Alternative must be 'two-sided', 'less', or 'greater'.")
-
-        results['variance'] = {
-            'observed': sample_var,
-            'test_statistic': chi2_stat,
-            'p_value': p_val
-        }
-
-    if not results:
-        raise ValueError("Provide at least one of mean_h0 or var_h0.")
-
-    return results
+def _get_bin_sz(sp):
+    sz = np.diff(sp[:, 0])
+    sz_min = sz.min()
+    assert (sz_min == sz).all()
+    return sz_min
 
 
-def bootstrap_test_1sample(data, hypothesized_value, 
-                           statistic='mean', 
-                           n_iterations=10000, 
-                           resample_size=None,
-                           seed=None):
-    """
-    One-sample bootstrap hypothesis test with customizable resample size.
+def sign(x):
+    s = x / np.abs(x)
+    s[x == 0] = 1
+    return s.astype(int)
 
-    Parameters:
-    - data: Array or list of numeric values.
-    - hypothesized_value: The null hypothesis value for the statistic.
-    - statistic: 'mean', 'median', 'var', or a custom function.
-    - n_iterations: Number of bootstrap iterations.
-    - resample_size: Size of each resample (default: same as len(data)).
-    - seed: Random seed for reproducibility.
-
-    Returns:
-    - obs_stat: Observed statistic.
-    - p_value: Two-tailed bootstrap p-value.
-    """
-    if seed is not None:
-        np.random.seed(seed)
-
-    data = np.array(data)
-    n = len(data)
-    if resample_size is None:
-        resample_size = n
-    else:
-        assert resample_size < n
-
-    # Define statistic function
-    if statistic == 'mean':
-        stat_func = np.mean
-    elif statistic == 'median':
-        stat_func = np.median
-    elif statistic == 'var':
-        stat_func = lambda x: np.var(x, ddof=1)
-    elif callable(statistic):
-        stat_func = statistic
-    else:
-        raise ValueError("Statistic must be 'mean', 'median', 'var', or a callable function.")
-
-    # Observed statistic
-    obs_stat = stat_func(data)
-
-    # Bootstrap sampling
-    boot_stats = []
-    for _ in range(n_iterations):
-        boot_stats.append(stat_func(np.random.choice(data, size=resample_size, replace=True)))
-
-    boot_stats = np.array(boot_stats)
-    
-    # Two-tailed p-value
-    p_value = np.mean(np.abs(boot_stats - hypothesized_value) >= np.abs(obs_stat - hypothesized_value))
-
-    return obs_stat, p_value
-
-
-def random_walk_1d(bin_size, rate_bifurcation: list, rate_annihilation: list, step_size: float=0.5, prob_fugal: float = 0.5, seed: int = 0, init_num = 1):
+def random_walk_1d(rate_bifurcation, rate_annihilation, max_distance: float=None, step_size: float=0.1, prob_fugal: float = 1, seed: int = 1400, init_num = 1, bin_size_interp: float = None, store_moves=False):
     """
     Perform a 1D random walk and return a Sholl Plot
 
@@ -211,93 +40,135 @@ def random_walk_1d(bin_size, rate_bifurcation: list, rate_annihilation: list, st
         num_bifurcations: number of bifurcations
     """
 
-    prob_annihilation = np.array(rate_annihilation) * step_size
-    prob_bifurcation = np.array(rate_bifurcation) * step_size
-
     # check correctness of values
     assert 0 <= prob_fugal <= 1
-    assert prob_bifurcation.size == prob_annihilation.size
-    assert ((0 <= prob_bifurcation) & (prob_bifurcation <= 1)).all()
-    assert ((0 <= prob_annihilation) & (prob_annihilation <= 1)).all()
-    assert ((0 <= prob_bifurcation + prob_annihilation) & (prob_bifurcation + prob_annihilation <= 1)).all()
     assert step_size > 0
-    assert bin_size > step_size
+           
+    # check whether it works on sholl plot or single rates
+    sholl_plot_flag = isinstance(rate_bifurcation, Iterable) and isinstance(rate_annihilation, Iterable) and (rate_bifurcation.size == rate_annihilation.size)
+    single_rate_flag = not (isinstance(rate_bifurcation, Iterable) or isinstance(rate_annihilation, Iterable)) and (max_distance is not None)    
+
+    if single_rate_flag:
+        n = int(round(max_distance / step_size))
+    elif sholl_plot_flag:
+        # check bin sizes and assign one
+        bin_size_bif = _get_bin_sz(rate_bifurcation)
+        bin_size_ann = _get_bin_sz(rate_annihilation)
+        assert bin_size_bif == bin_size_ann
+        bin_size = bin_size_bif
+        del bin_size_bif, bin_size_ann
+        n = int(round(bin_size / step_size))
+        rate_bifurcation, rate_annihilation = rate_bifurcation[:, 1], rate_annihilation[:, 1]
+    else:
+        raise Exception()
     
+    # bifurcations and annihilation probabilities
+    prob_bifurcation = np.concatenate((np.repeat(rate_bifurcation * step_size, n), [0])) 
+    prob_annihilation = np.concatenate((np.repeat(rate_annihilation * step_size, n), [1]))    
+
+    # check probabilities
+    assert ((0 <= prob_bifurcation) & (prob_bifurcation <= 1)).all() and ((0 <= prob_annihilation) & (prob_annihilation <= 1)).all() and \
+           ((0 <= prob_bifurcation + prob_annihilation) & (prob_bifurcation + prob_annihilation <= 1)).all()
     
+    # set the random seed
     np.random.seed(seed)
-    visit_counts = defaultdict(float)   # this vector count the visit as a function of the distance from soma
 
     # if the init_num is a tuple, extract a random number
     if type(init_num) in [tuple, list]:
         init_num = int(round(positive_normal_sample(*init_num)))
-        
-    walkers = [0] * init_num
-    visit_counts[0] += init_num
-    num_bifurcations = 0
+
+    nsteps = prob_bifurcation.size # number of steps
     
-    for _ in range(int(round(bin_size * prob_bifurcation.size / step_size))):
-        if len(walkers) == 0:
-            break
+    walkers = np.zeros(init_num, dtype=int)
+    visit_counts = np.zeros(nsteps, dtype=int)
+    visit_counts[0] = init_num
+    num_bifurcations = np.zeros(nsteps, dtype=int)
+
+
+    # handle branches
+    if store_moves:
+        branches = defaultdict(list)
+        for i in range(init_num):
+            branches[i] += [[0, 1]]
+        idx = np.array(np.arange(0, init_num))
         
-        new_walkers = []
-        for i in range(len(walkers)):
-            # walk
-            position = walkers[i]
+        
+    for time in range(1, nsteps):
+
+        if walkers.size == 0:
+            break
+
+        # random number select to select one out of annihilation, branching, elongation
+        X = np.random.rand(walkers.size)
+        
+        # walkers which will branch
+        idx_bif = (X >= prob_annihilation[np.abs(walkers)]) & (X < prob_bifurcation[np.abs(walkers)] + prob_annihilation[np.abs(walkers)])
             
-            # bin_index
-            bin_index = int(abs(position) / bin_size)
-            if bin_index >= prob_annihilation.size:
-                _prob_annihilation = 1
-                _prob_bifurcation = 0
-            else:
-                _prob_annihilation = prob_annihilation[bin_index]
-                _prob_bifurcation = prob_bifurcation[bin_index]
+        # walkers which will elongate
+        idx_eln = X >= prob_bifurcation[np.abs(walkers)] + prob_annihilation[np.abs(walkers)]
+        
+        # create entries for branches
+        if store_moves:
+            new_idx_bif = len(branches) + np.arange(0, idx_bif.sum() * 2)
+            old_idx_bif = np.repeat(idx[idx_bif], 2)
+            for orig, dest in zip(old_idx_bif, new_idx_bif):
+                branches[dest] += [ [time - 1, branches[orig][-1][1]] ]
+            new_idx = np.concatenate((idx[idx_eln], new_idx_bif))
 
+        # generate the new walkers
+        walkers = np.concatenate((walkers[idx_eln], np.repeat(walkers[idx_bif], 2)))                
+                            
 
-            # generate a random number
-            X = np.random.rand()
+        # generate steps
+        # in any other location
+        steps = np.random.choice([-1, 1], p=[1 - prob_fugal, prob_fugal], size=walkers.size) * sign(walkers)
+        
+        # correction of steps if the walker is at the origin
+        walkers_at_origin = walkers == 0
+        steps[walkers_at_origin] = np.random.choice([-1, 1], p=[0.5, 0.5], size=walkers_at_origin.sum()) 
 
-            # choose between elongation, annihilation, bifurcation
-            if X < _prob_annihilation:
-                n_branches = 0
-            elif X < (_prob_annihilation + _prob_bifurcation):
-                n_branches = 2
-                num_bifurcations += 1 # count the bifurcations
-            else:
-                n_branches = 1
+        # move the walkers
+        walkers += steps 
 
-
-            for _ in range(n_branches):
-                # pick up a step forward or backward
-                # if it start on the origin, the probability is the same
-                # otherwise it is biased toward the somatofugal direction
-                # if the particle is on negative coordinates the sign need to be inverted
-                if position == 0:
-                    step = np.random.choice([-step_size, step_size], p=[0.5] * 2)
-                else:
-                    step = np.random.choice([-step_size, step_size], p=[1 - prob_fugal, prob_fugal]) * sign(position)
-
-                new_position = position + step
+        if store_moves:
+            # update indices
+            idx = new_idx
+            
+            # extend
+            for i, dest in enumerate(new_idx):
+                branches[dest] += [ [time, walkers[i]] ]
                 
-                visit_counts[abs(new_position)] += 1
-                new_walkers.append(new_position)
-                
-        walkers = new_walkers
+        # update visits
+        d, counts = np.unique(np.abs(walkers), return_counts=True)        
+        visit_counts[d] += counts
+        
+        # count bifurcations
+        num_bifurcations[time] = idx_bif.sum()
 
+    # comulate the bifurcations
+    num_bifurcations = np.cumsum(num_bifurcations)
+    
     # make a visit count at different intervals than step size
     # yielding a Sholl Plot
-    visit_counts = np.array(sorted(visit_counts.items())).T
-    if bin_size and bin_size > 0:
-        max_distance = steps * step_size
-        xp = np.arange(0, max_distance + bin_size, bin_size)
-        yp = np.interp(xp, visit_counts[0, :], visit_counts[1, :])
-        yp[xp > max_distance] = 0
-        return (xp.tolist(), yp.tolist()), num_bifurcations
+    if bin_size_interp is None:
+        inc = 1
+        bin_size_interp = step_size
     else:
-        return (visit_counts[0, :].tolist(), visit_counts[1, :].tolist()), num_bifurcations
+        assert bin_size_interp > 0
+        inc = int(round(bin_size_interp / step_size))
+        
+    yp = visit_counts[::inc]
+    zp = num_bifurcations[::inc]
+    xp = np.arange(0, yp.size) * bin_size_interp
+
+    if store_moves:
+        return np.concatenate((xp.reshape(-1, 1), yp.reshape(-1, 1)), axis=1), np.concatenate((xp.reshape(-1, 1), zp.reshape(-1, 1)), axis=1), branches
+    else:
+        return np.concatenate((xp.reshape(-1, 1), yp.reshape(-1, 1)), axis=1), np.concatenate((xp.reshape(-1, 1), zp.reshape(-1, 1)), axis=1)
 
 
-def run_multiple_trials(n_trials: int, bin_size: float, rate_bifurcation: list, rate_annihilation: list, step_size: float=0.5, prob_fugal: float = 0.5, base_seed: int = 42, init_num = 1):
+
+def run_multiple_trials(rate_bifurcation, rate_annihilation, max_distance: float=None, n_trials: int = 100, step_size: float=0.1, prob_fugal: float = 1, base_seed: int = 42, init_num = 1, bin_size_interp: float = None):
     """
     Run multiple trials of the random walk and store each path.
 
@@ -310,159 +181,64 @@ def run_multiple_trials(n_trials: int, bin_size: float, rate_bifurcation: list, 
         list of lists: Each inner list is a position trace of one walk.
     """
     all_walks = []
-    num_bifurcations = []
+    all_bif = []
     for trial in range(n_trials):
         seed = base_seed + trial  # unique seed per trial
-        sp, _num_bifurcations = random_walk_1d(bin_size, rate_bifurcation, rate_annihilation, step_size, prob_fugal, seed, init_num)
+        sp, bif = random_walk_1d(rate_bifurcation, rate_annihilation, max_distance=max_distance, step_size=step_size, prob_fugal=prob_fugal, seed=seed, init_num=init_num, bin_size_interp=bin_size_interp)
         all_walks.append(sp)
-        num_bifurcations.append(_num_bifurcations)
-    return all_walks, num_bifurcations
+        all_bif.append(bif)
+    return np.array(all_walks), np.array(all_bif)
 
 
 
-# Example usage:
-if __name__ == "__main__":
+
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(7.0, 3.5))
+
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['font.weight'] = 'bold'  # NEW
+    plt.rcParams['axes.labelweight'] = 'bold'
+    plt.rcParams['axes.titleweight'] = 'bold'    
     
-    import sys
-
-    filepath = {'SP':'sp_apical_sholl_plot.txt', 'SL':'sl_apical_sholl_plot.txt'}[sys.argv[-1]]
-    
-    exp_data = read_distance_csv_no_header(filepath)
-    
-    data_bekkers = {
-        'SP':{
-                'init #':{'mean':1.41, 'SD':round(0.13 * np.sqrt(27), 2)},
-                'bif #':{'mean':18.5, 'SD':round(0.9 * np.sqrt(27), 1)},
-                '#':27
-        },
-        'SL':{
-                'init #':{'mean':2.68, 'SD':round(0.12 * np.sqrt(34), 2)},
-                'bif #':{'mean':13.0, 'SD':round(0.5 * np.sqrt(34), 1)},
-                '#':34
-        }
-    }[sys.argv[-1]]
-
-    data_bathellier = {
-        'SP':8,
-        'SL':3
-        }
-
-    # assess equal size of intervals
-    dx = np.unique(np.diff(exp_data.distance))
-    assert dx.size == 1
-    dx = dx[0]
-    
-    rate_bifurcation, rate_annihilation = rates.solve_qp(dx, exp_data.avg.to_numpy(), exp_data.SD.to_numpy(), n_bif=(data_bekkers['bif #']['mean'], data_bekkers['bif #']['SD'] ** 2))
-
-    n_neuron = data_bathellier[sys.argv[-1]]
-    
-    maximum_distance = len(rate_annihilation) * dx
-    prob_fugal = 1  # Probability of moving right
-    ##    print('rate_bifurcation:', rate_bifurcation, '\trate_annihilation', rate_annihilation)
-    n_trials = 150
-    step_size = 5
-    init_num = exp_data.loc[0, ['avg', 'SD']].tolist()
-    ##    print(init_num)
-    ##    resample_size = 10
-    steps = int(round(maximum_distance / step_size))  # Number of steps in the random walk
-    all_walks, num_bifurcations = run_multiple_trials(n_trials, dx, rate_bifurcation, rate_annihilation, step_size=step_size,
-                                                      prob_fugal=prob_fugal, base_seed=0, init_num=init_num)
-
-    distance = np.arange(0, int(maximum_distance / dx) + 1) * dx
-    all_visits = np.array([ yp + ([0.] * (distance.size - len(yp))) for _, yp in all_walks ])
-    visits_mean_sim = np.mean(all_visits, axis=0)
-    visits_std_sim = np.std(all_visits, axis=0)
-    
-    bif_mean_sim = np.mean(num_bifurcations)
-    bif_std_sim = np.std(num_bifurcations)
-
-    bif_mean_exp = data_bekkers['bif #']['mean']
-    bif_std_exp = data_bekkers['bif #']['SD']
-    n_bif = data_bekkers['#']
-
-    #print(distance), print(all_visits)
-    if type(init_num) == list:
-        visits_mean_hyp = [init_num[0]]
-        visits_std_hyp = [init_num[1]]
-    else:
-        visits_mean_hyp = [init_num]
-        visits_std_hyp = [0]
-
-
-    for i in range(distance.size - 1):        
-        Ez0 = visits_mean_hyp[-1]
-        SDz0 = visits_std_hyp[-1]
+    branches = random_walk_1d(0.05, 0.005, init_num=30, max_distance=50, store_moves=True, prob_fugal=0.5)[-1] # test
+    flag = True
+    for b in branches.values():
+        b = np.array(b)
+        plt.plot(b[:, 0], np.abs(b[:, 1]) * 0.25, color='gray', label='RW' if flag else None, linewidth=0.5)
+        flag = False
         
-        visits_mean_hyp.append(model.mean_Z(dx, Ez0, rate_bifurcation[i], rate_annihilation[i]) )
-        visits_std_hyp.append(np.sqrt(model.var_Z(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])))
 
-    visits_mean_hyp = np.array(visits_mean_hyp)
-    visits_std_hyp = np.array(visits_std_hyp)
+    branches = random_walk_1d(0.05, 0.005, init_num=30, max_distance=50, store_moves=True, prob_fugal=0.75)[-1] # test
+    flag = True
+    for b in branches.values():
+        b = np.array(b)
+        plt.plot(b[:, 0], np.abs(b[:, 1]) * 0.25, color='black', label='BRW' if flag else None, linewidth=2)
+        flag = False
+        
+    branches = random_walk_1d(0.05 + 0.075, 0.005 + 0.075, init_num=30, max_distance=50, store_moves=True, prob_fugal=0.75)[-1] # test
+    flag = True
+    for b in branches.values():
+        b = np.array(b)
+        plt.plot(b[:, 0], np.abs(b[:, 1]) * 0.25, color='red', label=r'BRW, sh. $\beta$ and $\alpha$' if flag else None, alpha=0.4)
+        flag = False
 
+    branches = random_walk_1d(0.05 + 0.025, 0.005, init_num=30, max_distance=50, store_moves=True, prob_fugal=0.75)[-1] # test
+    flag = True
+    for b in branches.values():
+        b = np.array(b)
+        plt.plot(b[:, 0], np.abs(b[:, 1]) * 0.25, color='blue', label=r'BRW, inc.  $\beta$' if flag else None, alpha=0.1)
+        flag = False
+        
+    plt.xlabel('t')
+    plt.ylabel('x')
     
-    bif_mean_hyp = 0
-    bif_std_hyp = 0
-    for i in range(distance.size - 1):
-        Ez0 = visits_mean_hyp[i]
-        SDz0 = visits_std_hyp[i]
-        bif_mean_hyp += model.mean_B(dx, Ez0, rate_bifurcation[i], rate_annihilation[i])
-        bif_std_hyp += model.var_B(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])
-        
-    for i in range(distance.size - 2):
-        Ez0 = visits_mean_hyp[i]
-        SDz0 = visits_std_hyp[i]
-        _var_B = model.var_B(dx, Ez0, SDz0  ** 2, rate_bifurcation[i], rate_annihilation[i])
-        
-        term_all_Exps = 0
-        for j in range(i + 1, distance.size - 1):
-            term_all_Exps += np.prod([np.exp( (rate_bifurcation[k] - rate_annihilation[k]) * dx) for k in range(i + 1, j + 1)])
-            
-        bif_std_hyp += 2 * _var_B * term_all_Exps
-
-    bif_std_hyp = np.sqrt(bif_std_hyp)
-
-    # print bifurcations
-    print('# sim. bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_sim, bif_std_sim))
-    print('# modeled bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_hyp, bif_std_hyp))
-    print('# exp. bifurcations mean and std:\t%.1f\t%.1f' % (bif_mean_exp, bif_std_exp))
-
-    print('comparison of bifurcations (sim vs hyp):')
-    print(one_sample_tests(num_bifurcations, mean_h0=bif_mean_hyp, var_h0=bif_std_hyp ** 2))
-    
-    print('comparison of bifurcations (sim vs exp):')
-    print(compare_samples(bif_mean_sim, bif_std_sim ** 2, n_trials, bif_mean_exp, bif_std_exp ** 2, n_bif))
-    #print('using boostrap')
-    #print('\tcomparison of bifurcation mean (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(num_bifurcations, bif_mean_hyp, resample_size=resample_size, seed=48))
-    
-    #print('\tcomparison of bifurcation var (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(num_bifurcations, bif_std_hyp ** 2, statistic='var', resample_size=resample_size, seed=84))
-    print()
-
-    # compare sholl plots using bootstrap
-    for i, x in enumerate(distance):
-        
-        print('distance from soma %d' % x)
-        
-        print(one_sample_tests(all_visits[:, i], mean_h0=visits_mean_hyp[i], var_h0=visits_std_hyp[i] ** 2))
-
-        print(compare_samples(all_visits[:, i].mean(), all_visits[:, i].var(), all_visits[:, i].size, exp_data.loc[i, 'avg'], exp_data.loc[i, 'SD'] ** 2, n_neuron))
-        #print('\tcomparison of bifurcation mean (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(all_visits[:, i], visits_mean_hyp[i], resample_size=resample_size, seed=48 + i))
-        
-        #print('\tcomparison of bifurcation var (sim vs hyp):\tstatistic=%.1f,\tp=%.3f' % bootstrap_test_1sample(all_visits[:, i], visits_std_hyp[i] ** 2, statistic='var', resample_size=resample_size, seed=84 + i))
-        print('\n')
-        
-    # Plotting the result
-    plt.plot(distance, visits_mean_sim, color='blue')
-    plt.scatter(distance, visits_mean_sim, color='blue')
-    plt.fill_between(distance, visits_mean_sim - visits_std_sim, visits_mean_sim + visits_std_sim, alpha=0.1, color='blue')
-
-    plt.plot(distance, visits_mean_hyp, color='darkgray')
-    plt.scatter(distance, visits_mean_hyp, color='darkgray')
-    plt.fill_between(distance, visits_mean_hyp - visits_std_hyp, visits_mean_hyp + visits_std_hyp, alpha=0.1, color='darkgray')
-
-    plt.errorbar(exp_data.distance, exp_data.avg, yerr=exp_data.SD, fmt='o', capsize=5, color='black')
-
-    plt.xlabel('Distance')
-    plt.ylabel('Visits')
-    plt.title('1D Random Walk')
-    plt.grid(True)
+    plt.ylim([0, 35])
+    plt.xlim([0, 200])
+    plt.legend(loc='upper left')
+    plt.tight_layout()
+    fig.savefig('fig_1_a.png', dpi=300)
     plt.show()
+    
+    
+    
