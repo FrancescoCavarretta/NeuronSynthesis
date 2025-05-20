@@ -27,7 +27,7 @@ def mk_objective(model, kappa, Z, V):
         terms += [getA_term(model, kappa, Z, V, m, i) * getA_term(model, kappa, Z, V, n, i) for m in range(0, i) for n in range(0, i)]
     return sum(terms)
 
-def solve_qp(step_size, dx, Z, V, n_bif=None, max_iter=10000, kappa_Penalty_Var=1.0):
+def solve_qp(step_size, dx, Z, V, n_bif=None, max_iter=10000, kappa_Penalty_Mean=0, kappa_Penalty_Var=1.0):
     """
     Solves a QP problem using Pyomo with vector-style variable indexing.
 
@@ -47,7 +47,7 @@ def solve_qp(step_size, dx, Z, V, n_bif=None, max_iter=10000, kappa_Penalty_Var=
     model.b = Var(range(kappa.size), domain=NonNegativeReals)
 
     # define 1 slack variables for eventual constraints of variance of bifurcations
-    model.s = Var(domain=Reals)
+    model.s = Var(range(2), domain=Reals)
             
     # Constraint: 
     model.constraints = ConstraintList()
@@ -83,11 +83,11 @@ def solve_qp(step_size, dx, Z, V, n_bif=None, max_iter=10000, kappa_Penalty_Var=
                         var_terms.append(2 * term1 * term2 * Z[j - 1] / Z[i - 1] * term3)
                         Vprev = term3
                 
-            model.constraints.add(sum(var_terms) + model.s == n_bif[1]) 
+            model.constraints.add(sum(var_terms) + model.s[1] == n_bif[1]) 
 
     # Objective
     model.obj = Objective(
-        expr=mk_objective(model, kappa, Z, V) + kappa_Penalty_Var * model.s ** 2,
+        expr=mk_objective(model, kappa, Z, V) + kappa_Penalty_Mean * model.s[0] ** 2 + kappa_Penalty_Var * model.s[1] ** 2,
         sense=minimize
     )
 
@@ -96,8 +96,8 @@ def solve_qp(step_size, dx, Z, V, n_bif=None, max_iter=10000, kappa_Penalty_Var=
     solver = SolverFactory('ipopt')
     #solver.options['max_iter'] = max_iter
     solver.solve(model, tee=False)
-    print("Objective value:", value(model.obj))
-    print(value(model.s))
+    #print("Objective value:", value(model.obj))
+    #print(value(model.s))
     
     # Extract bifurcation rates as array
     b = np.array([value(model.b[i]) for i in model.b])

@@ -128,8 +128,8 @@ def plot_histogram(data, bins=10, title='', xlabel='number of branch points', yl
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.xlim([0,60])
-    plt.ylim([0,50]) #(top=y2 + y_max * 0.15)  # ensure both error bars are visible
+    plt.xlim([-5,65])
+    #plt.ylim([0,50]) #(top=y2 + y_max * 0.15)  # ensure both error bars are visible
     plt.legend(loc='upper right')
     plt.tight_layout()
     plt.gca().spines['top'].set_visible(False)
@@ -381,7 +381,7 @@ if __name__ == "__main__":
     dx = dx[0]
 
     # estimate bifurcation and annihilation rates
-    rate_bifurcation, rate_annihilation = rates.solve_qp(step_size, dx, exp_data.Mean.to_numpy(), exp_data.SD.to_numpy(), n_bif=n_bif, kappa_Penalty_Var=1.0)
+    rate_bifurcation, rate_annihilation = rates.solve_qp(step_size, dx, exp_data.Mean.to_numpy(), exp_data.SD.to_numpy(), n_bif=n_bif, kappa_Penalty_Var=1)
 
     print(rate_bifurcation)
     print(rate_annihilation)
@@ -406,22 +406,22 @@ if __name__ == "__main__":
     # perform tests between sholl plots
     if sim_data.size == exp_data.size:
         r = compare_dataframes(sim_data, exp_data, n_trials, n_exp_neuron)
-##        print('\nsim vs exp')
-##        print(r, '\n\n')
+        print('\nsim vs exp')
+        print(r, '\n\n')
         significant_bins1 = r[r.SD < alpha].index
         significant_bins2 = r[r.Mean < alpha].index
         
-##        r = compare_dataframes(sim_data, theor_data, n_trials, None)
-##        print('\nsim vs theor')
-##        print(r, '\n\n')
-##
-##        r = compare_dataframes(exp_data, theor_data, n_exp_neuron, None)
-##        print('\nexp vs theor')
-##        print(r, '\n\n')
-##        
-##        print('Exp\n', exp_data, '\n')
-##        print('Sim\n', sim_data, '\n')
-##        print('Th.\n', theor_data, '\n')
+        r = compare_dataframes(sim_data, theor_data, n_trials, None)
+        print('\nsim vs theor')
+        print(r, '\n\n')
+
+        r = compare_dataframes(exp_data, theor_data, n_exp_neuron, None)
+        print('\nexp vs theor')
+        print(r, '\n\n')
+        
+        print('Exp\n', exp_data, '\n')
+        print('Sim\n', sim_data, '\n')
+        print('Th.\n', theor_data, '\n')
     
     # compare mean and variances
 

@@ -101,9 +101,9 @@ def var_B(x, E_z0, Var_z0, beta, alpha):
         exp_kappa = np.exp(kappa * x)
         exp_2kappa = np.exp(2 * kappa * x)
 
-        term1 = beta * E_z0 * (exp_kappa - 1) / kappa
+        term1 = beta * E_z0 * (exp_kappa - 1) / kappa 
         term2 = beta**2 * E_z0 * (2 * beta - kappa) * (exp_2kappa - 2 * kappa * x * exp_kappa - 1) / kappa**3
-        term3 = beta**2 * Var_z0 * (exp_2kappa - 2 * exp_kappa + 1) / kappa**2
+        term3 = beta**2 * Var_z0 * ((exp_kappa - 1) / kappa)**2
 
         return term1 + term2 + term3
     else:
